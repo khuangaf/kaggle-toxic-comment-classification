@@ -23,7 +23,7 @@ from keras.models import Model
 from keras.layers import Dense, Embedding, Input, LeakyReLU
 from keras.layers import LSTM, Bidirectional, GlobalMaxPool1D, Dropout, CuDNNLSTM, CuDNNGRU
 from keras.layers import Dense, Embedding, Input, LeakyReLU, merge, Conv2D, Conv1D, PReLU,ELU,Concatenate, Convolution1D
-from keras.layers import LSTM, Bidirectional, GlobalMaxPool1D, GRU, Dropout, CuDNNGRU, Reshape, MaxPool2D,Flatten, Lambda, Activation
+from keras.layers import LSTM, Bidirectional, GlobalMaxPool1D, GRU, Dropout, CuDNNGRU, Reshape, MaxPool2D,Flatten, Lambda, Activation, LeakyReLU, PReLU
 from keras.layers.core import SpatialDropout1D
 from keras.layers.normalization import BatchNormalization
 from keras.preprocessing import text, sequence
@@ -40,8 +40,8 @@ import tensorflow as tf
 
 
 os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
-os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+os.environ['TF_CPP_MIN_LOG_LEVEL']='1'
 
 
 # In[3]:
@@ -56,17 +56,19 @@ set_session(tf.Session(config=config))
 
 
 import h5py
-with h5py.File('../input/fasttext_processed_rmnum_extra.h5', 'r') as f:
+with h5py.File('../input/fasttext300_processed_rmnum.h5', 'r') as f:
     x_train = f['x_train'].value
     y_train = f['y_train'].value
     x_test = f['x_test'].value
 
+
+    
 print ("file loaded")
 # In[5]:
 
 
 embedding_dim = 300
-maxlen = 100
+maxlen = 300
 
 
 
@@ -174,28 +176,26 @@ def get_model():
     embed_size = embedding_dim
     inp = Input(shape=(maxlen, embedding_dim ))
 #     x = Embedding(max_features, embed_size)(inp)
-#     x = Dropout(0.4)(x)
+
     x = SpatialDropout1D(0.2)(inp)
-    x = Bidirectional(CuDNNGRU(50, return_sequences=True))(x)
+    x = Bidirectional(CuDNNLSTM(50, return_sequences=True))(x)
     # x = BatchNormalization()(x)
     x = Activation('relu')(x)
-
-#     x = Dropout(0.4)(x)
-#     x = Bidirectional(CuDNNLSTM(50, return_sequences=True))(x)
+#     xs = Activation('sigmoid')(x)
+#     x = LeakyReLU()(x)
     A = AttentionWeightedAverage(name='attlayer', return_attention=False)(x)
-#     A = AttentionWithContext()(x)
-#     x = AttentionWithContext()(x)
-#     C = Crop(2,-2,-1)(x)
-#     C = Reshape([-1,])(C)
-#     print(C)
+
     G = GlobalMaxPool1D()(x)
+#     C = Crop(1,-2,-1)(x)
+#     C = Reshape([-1,])(C)
     x = Concatenate()([A,G])
     x = Dropout(0.1)(x)
-    
     x = Dense(50, activation=None)(x)
-    # x = BatchNormalization()(x)
     x = Activation('relu')(x)
+#     x = LeakyReLU()(x)
     x = Dropout(0.1)(x)
+    
+    
     x = Dense(6, activation="sigmoid")(x)
     model = Model(inputs=inp, outputs=x)
 #     model.layers[1].set_weights([embedding_matrix])
@@ -208,6 +208,100 @@ def get_model():
 
 # In[151]:
 
+def get_cnn_model():
+    global embedding_dim
+    filters = [400]*4
+    kernel_size = [2,3,4,5]
+    embed_size = embedding_dim
+    inp = Input(shape=(maxlen, embedding_dim ))
+#     x = Embedding(max_features, embed_size)(inp)
+
+    x = SpatialDropout1D(0.2)(inp)
+
+    x0 = Conv1D(filters = filters[0], 
+               kernel_size = kernel_size[0],
+               padding='valid',
+               activation=None,
+               strides=1)(x)
+    x1 = Conv1D(filters = filters[1], 
+               kernel_size = kernel_size[1],
+               padding='valid',
+               activation=None,
+               strides=1)(x)
+    x2 = Conv1D(filters = filters[2], 
+               kernel_size = kernel_size[2],
+               padding='valid',
+               activation=None,
+               strides=1)(x)
+    x3 = Conv1D(filters = filters[3], 
+               kernel_size = kernel_size[3],
+               padding='valid',
+               activation=None,
+               strides=1)(x)
+#     x4 = Conv1D(filters = filters[4], 
+#                kernel_size = kernel_size[4],
+#                padding='valid',
+#                activation=None,
+#                strides=1)(x)
+    # x = BatchNormalization()(x)
+#     x = Activation('relu')(x)
+#     x = Dropout(0.1)(x)
+    x0r = Activation('relu')(x0)
+#     x0r = PReLU()(x0)
+    x0s = Activation('sigmoid')(x0)
+    x0r = GlobalMaxPool1D()(x0r)
+    x0s = GlobalMaxPool1D()(x0s)
+    x0 = Concatenate()([x0r,x0s])
+    
+    
+    x1r = Activation('relu')(x1)
+#     x1r = PReLU()(x1)
+    x1s = Activation('sigmoid')(x1)
+    x1r = GlobalMaxPool1D()(x1r)
+    x1s = GlobalMaxPool1D()(x1s)
+    x1 = Concatenate()([x1r,x1s])
+    
+    x2r = Activation('relu')(x2)
+#     x2r = PReLU()(x2)
+    x2s = Activation('sigmoid')(x2)
+    x2r = GlobalMaxPool1D()(x2r)
+    x2s = GlobalMaxPool1D()(x2s)
+    x2 = Concatenate()([x2r,x2s])
+    
+    
+    x3r = Activation('relu')(x3)
+#     x3r = PReLU()(x3)
+    x3s = Activation('sigmoid')(x3)
+    x3r = GlobalMaxPool1D()(x3r)
+    x3s = GlobalMaxPool1D()(x3s)
+    x3 = Concatenate()([x3r,x3s])
+#     x4 = Activation('relu')(x4)
+#     x4 = GlobalMaxPool1D()(x4)
+#     C = Crop(1,-2,-1)(x)
+#     C = Reshape([-1,])(C)
+#     x = Concatenate()([A,G])
+    x = Concatenate()([x0,x1,x2,x3])
+    x = Dropout(0.1)(x)
+    x = Dense(250, activation=None)(x)
+    x = Dropout(0.1)(x)
+    x = Activation('relu')(x)
+#     xs = Activation('sigmoid')(x)
+#     x = Concatenate()([xr,xs])
+    x = Dense(50, activation=None)(x)
+    x = Activation('relu')(x)
+
+    x = Dropout(0.1)(x)
+    
+    
+    x = Dense(6, activation="sigmoid")(x)
+    model = Model(inputs=inp, outputs=x)
+#     model.layers[1].set_weights([embedding_matrix])
+#     model.layers[1].trainable = False
+    model.compile(loss='binary_crossentropy',
+                  optimizer=Adam(amsgrad=True),
+                  metrics=['accuracy'])
+    return model
+
 
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import KFold
@@ -216,6 +310,7 @@ def train_bagging(X, y, model_func, fold_count, batch_size, num_epoch, patience,
     best_auc_score = -np.inf
     best_weights = None
     kf = KFold(n_splits=fold_count, random_state=None, shuffle=False)
+#     skf = StratifiedKFold(n_splits=fold_count, random_state=None, shuffle=False)
     fold_id = -1
     model_list = []
     for train_index, test_index in kf.split(X):
@@ -223,6 +318,7 @@ def train_bagging(X, y, model_func, fold_count, batch_size, num_epoch, patience,
         model = model_func()
         X_train, X_test = X[train_index], X[test_index]
         y_train, y_test = y[train_index], y[test_index]
+
         not_improve_count = 0
         current_best_auc_score = -np.inf
         for e in range(num_epoch):
@@ -243,6 +339,7 @@ def train_bagging(X, y, model_func, fold_count, batch_size, num_epoch, patience,
                     model.set_weights(current_best_weights)
                     model_list.append(model)
                     if verbose: print ("Model appended.")
+                    print("Run {} epochs".format(e))
                     break
         if current_best_auc_score > best_auc_score:
             print("Best AUC Score improved from {0} to {1}.".format(best_auc_score, current_best_auc_score))
@@ -261,8 +358,9 @@ def train_bagging(X, y, model_func, fold_count, batch_size, num_epoch, patience,
 # In[159]:
 
 
-get_model_func = lambda : get_model()
-fname='sp_bigru_relu_ft100_d1_atten_global_amsgrad_bag_rmnum_extra80'
+get_model_func = lambda : get_cnn_model()
+# fname='sp_bilstm_relu_d1_atten_global_amsgrad_bag_rmnum_ft300'
+fname = 'sp_cnn_f300_k2345_d1_250_50_rs_global_bag_rmnum_ft300'
 print ("writing to {} ....".format(fname))
 batch_size= 512
 epochs = 80
@@ -279,7 +377,7 @@ for index, model in enumerate(model_list):
     if index == 0: 
         y_pred = model.predict(x_test, batch_size=batch_size)
     else:
-        y_pred += model.predict(x_test,batch_size=batch_size)
+        y_pred += model.predict(x_test, batch_size=batch_size)
     
 y_pred = y_pred / len(model_list)
 
